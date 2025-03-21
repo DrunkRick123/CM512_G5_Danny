@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, echo=T, message=F, cache=F, warning=F}
 rm(list=ls(all=T))
 knitr::opts_chunk$set(paged.print=FALSE, comment = NA)
-pacman::p_load(magrittr, readr, caTools, ggplot2, dplyr, vcd)
+pacman::p_load(magrittr, readr, caTools, ggplot2, dplyr, vcd,tidyverse,lubridate,scales)
 ```
 
 #Load File
@@ -18,8 +18,18 @@ Z = read_csv("tafeng123/data/ta_feng_all_months_merged.csv") %>%
     "date","cust","age","area","cat","prod","qty","cost","price"))
 glimpse(Z)
 ```
+#資料預處理
+```{r}
+# 確保 date 欄位轉換成日期格式
+Z <- Z %>%
+  mutate(date = mdy(date))  # 原格式是 "11/1/2000"，應使用 mdy()
 
-#1畫出商品售價(cost)的分布，x軸取log10
+# 檢查轉換是否成功
+glimpse(Z)
+
+```
+#1以商品售價、銷售額、毛利為核心
+#1.1畫出商品售價(cost)的分布，x軸取log10
 ```{r}
 ggplot(Z, aes(x = log10(cost))) +
   geom_histogram(binwidth = 0.1, fill = "blue", alpha = 0.7) +
@@ -69,7 +79,7 @@ ggplot(Z_filtered, aes(x = log_cost)) +
 #去除極端值後，我們發現大部分商品的價格約落於30~100元之間
 ```
 
-#2計算每種商品的總營收(cat == "Product Subclass")
+#1.3計算每種商品的總營收(cat == "Product Subclass")
 ```{r}
 product_summary = Z %>%
   group_by(cat) %>%
@@ -82,10 +92,54 @@ ggplot(product_summary, aes(x = reorder(cat, Total_Revenue), y = Total_Revenue))
   geom_bar(stat = "identity", fill = "steelblue") +
   coord_flip() +  # 讓 X 軸標籤更好讀
   theme_minimal(base_size = 14) +
-  labs(title = "前 10 大營收品項", x = "商品類別", y = "總營收") +
+  labs(title = "前 10 大營收商品類別", x = "商品類別", y = "總營收") +
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold"),
     axis.title.x = element_text(face = "bold"),
     axis.title.y = element_text(face = "bold")
   )
+```
+#3從區域來分析
+```{r}
+# 確保 `transactions` 存在
+area_summary <- Z %>%
+  filter(!(area %in% c("Unknown", "Others"))) %>%
+  group_by(area) %>%
+  summarise(
+    total_sales = sum(qty * price, na.rm = TRUE),
+    transactions = n_distinct(cust)  # 計算交易數
+  ) %>%
+  arrange(desc(transactions))  # 依交易數排序
+
+# 取對數縮放（避免數值極端影響圖表）
+area_summary <- area_summary %>%
+  mutate(log_total_sales = log10(total_sales))  # 對銷售額取 log10
+
+# 計算縮放比例，讓交易數 & log(銷售額) 規模一致
+scale_factor <- max(area_summary$transactions) / max(area_summary$log_total_sales)
+
+ggplot(area_summary, aes(x = area)) + 
+  # 交易數長條圖
+  geom_col(aes(y = transactions), fill = "coral", width = 0.6, alpha = 0.8) +  
+  # log(銷售額) 折線圖
+  geom_line(aes(y = log_total_sales * scale_factor, group = 1), 
+            color = "blue", size = 1.2) +  
+  # 數據點
+  geom_point(aes(y = log_total_sales * scale_factor), 
+             color = "blue", size = 3) +  
+  # log(銷售額) 標籤
+  geom_text(aes(y = log_total_sales * scale_factor, 
+                label = round(log_total_sales, 2)), 
+            vjust = -0.5, hjust = 0.5, size = 5, color = "blue", fontface = "bold") +  
+  # 交易數標籤
+  geom_text(aes(y = transactions, label = transactions), 
+            vjust = -0.5, hjust = 0.5, size = 5, color = "black", fontface = "bold") +  
+  scale_y_continuous(
+    name = "交易次數",
+    sec.axis = sec_axis(~ . / scale_factor, name = "總銷售額 (log10)")
+  ) +
+  labs(title = "各地區交易次數與總銷售額 (log10)", x = "地區", y = "交易次數") +
+  theme_minimal(base_size = 14) +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # 旋轉 X 軸標籤
+
 ```
