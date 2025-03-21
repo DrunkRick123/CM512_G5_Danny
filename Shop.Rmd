@@ -18,3 +18,74 @@ Z = read_csv("tafeng123/data/ta_feng_all_months_merged.csv") %>%
     "date","cust","age","area","cat","prod","qty","cost","price"))
 glimpse(Z)
 ```
+
+#1畫出商品售價(cost)的分布，x軸取log10
+```{r}
+ggplot(Z, aes(x = log10(cost))) +
+  geom_histogram(binwidth = 0.1, fill = "blue", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "商品售價分布", x = "售價", y = "頻率")
+```
+
+#1.1畫商品售價(cost)的盒鬚圖，x軸取log10
+```{r}
+ggplot(Z, aes(x = log10(cost))) +
+  geom_boxplot(fill = "royalblue", color = "black", alpha = 0.7, width = 0.3, outlier.size = 1.5) +
+  theme_minimal(base_size = 14) +  # 設定較大的字體
+  labs(title = "商品售價盒鬚圖", x = "售價 (log10)") +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # 標題置中且加粗
+    axis.title.x = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "gray", linetype = "dashed")  # 增加網格線
+  )
+```
+#1.2盒鬚圖改良(使用IQR method去除極端值)
+```{r}
+# 計算IQR四分位距來過濾極端值
+Q1 <- quantile(Z$cost, 0.25)  # 第1四分位數
+Q3 <- quantile(Z$cost, 0.75)  # 第3四分位數
+IQR_value <- Q3 - Q1  # 計算IQR
+
+# 設定範圍 (1.5 倍 IQR 規則)
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+
+# 過濾掉極端值
+Z_filtered <- Z[Z$cost >= lower_bound & Z$cost <= upper_bound, ]
+
+# 轉換數據 (取 log10)
+Z_filtered$log_cost <- log10(Z_filtered$cost)
+
+# 繪製盒鬚圖
+ggplot(Z_filtered, aes(x = log_cost)) +
+  geom_boxplot(fill = "royalblue", color = "black", alpha = 0.7, width = 0.3) +
+  theme_minimal(base_size = 14) +  # 設定較大的字體
+  labs(title = "商品售價盒鬚圖 (已去除極端值)", x = "售價 (log10)") +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # 標題置中且加粗
+    axis.title.x = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "gray", linetype = "dashed")  # 增加網格線
+  )
+#去除極端值後，我們發現大部分商品的價格約落於30~100元之間
+```
+
+#2計算每種商品的總營收(cat == "Product Subclass")
+```{r}
+product_summary = Z %>%
+  group_by(cat) %>%
+  summarise(Total_Revenue = sum(qty * price, na.rm = TRUE)) %>%
+  arrange(desc(Total_Revenue)) %>%
+  head(10)  # 取前 20 大營收品項
+
+# 繪製長條圖
+ggplot(product_summary, aes(x = reorder(cat, Total_Revenue), y = Total_Revenue)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  # 讓 X 軸標籤更好讀
+  theme_minimal(base_size = 14) +
+  labs(title = "前 10 大營收品項", x = "商品類別", y = "總營收") +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+```
