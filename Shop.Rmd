@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, echo=T, message=F, cache=F, warning=F}
 rm(list=ls(all=T))
 knitr::opts_chunk$set(paged.print=FALSE, comment = NA)
-pacman::p_load(magrittr, readr, caTools, ggplot2, dplyr, vcd,tidyverse,lubridate,scales)
+pacman::p_load(magrittr, readr, caTools, ggplot2, dplyr, vcd,tidyverse,lubridate,scales,ploty)
 ```
 
 #Load File
@@ -97,6 +97,117 @@ ggplot(product_summary, aes(x = reorder(cat, Total_Revenue), y = Total_Revenue))
     plot.title = element_text(hjust = 0.5, face = "bold"),
     axis.title.x = element_text(face = "bold"),
     axis.title.y = element_text(face = "bold")
+  )
+```
+#1.4銷售量最高的商品（熱銷 TOP 10）
+```{r}
+top10_qty <- Z %>%
+  group_by(prod) %>%
+  summarise(
+    total_qty = sum(qty, na.rm = TRUE),
+    total_sales = sum(qty * price, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_qty)) %>%
+  slice_head(n = 10)
+
+ggplot(top10_qty, aes(x = reorder(prod, total_qty), y = total_qty)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "前 10 熱銷商品（數量）", x = "商品編號", y = "總銷售量") +
+  theme_minimal(base_size = 14)
+```
+#1.5毛利最高的商品（最賺錢 TOP 10）
+```{r}
+top10_profit <- Z %>%
+  mutate(profit = (price - cost) * qty) %>%
+  group_by(prod) %>%
+  summarise(
+    total_profit = sum(profit, na.rm = TRUE),
+    total_sales = sum(price * qty, na.rm = TRUE),
+    total_qty = sum(qty),
+    .groups = "drop"
+  ) %>%
+  filter(total_profit > 0) %>%                    # ✅ 只保留毛利 > 0 的商品
+  mutate(log_profit = log10(total_profit)) %>%
+  arrange(desc(total_profit)) %>%
+  slice_head(n = 10)
+
+ggplot(top10_profit, aes(x = reorder(prod, log_profit), y = log_profit)) +
+  geom_col(fill = "darkgreen") +
+  geom_text(aes(label = round(log_profit, 2)), hjust = -0.1, size = 4, color = "black") +
+  coord_flip() +
+  labs(title = "前 10 毛利最高商品（log10 顯示）", x = "商品編號", y = "log10(總毛利)") +
+  theme_minimal(base_size = 14)
+```
+#1.6商品銷售量 vs. 毛利 的交叉分析圖（四象限圖）(可互動!!!)
+##1建立商品分析資料
+```{r}
+product_analysis <- Z %>%
+  mutate(
+    profit = (price - cost) * qty,
+    sales = price * qty
+  ) %>%
+  group_by(prod) %>%
+  summarise(
+    total_qty = sum(qty),
+    total_profit = sum(profit),
+    total_sales = sum(sales),
+    .groups = "drop"
+  ) %>%
+  filter(total_qty > 0, total_profit > 0)
+```
+##2挑出 Top 100 熱賣 & 毛利商品
+```{r}
+# 前 100 熱賣
+top100_qty <- product_analysis %>%
+  arrange(desc(total_qty)) %>%
+  slice_head(n = 100) %>%
+  mutate(source = "熱賣 Top 100")
+
+# 前 100 毛利
+top100_profit <- product_analysis %>%
+  arrange(desc(total_profit)) %>%
+  slice_head(n = 100) %>%
+  mutate(source = "毛利 Top 100")
+
+```
+##3合併兩者 + 標記雙重入選商品
+```{r}
+# 合併
+top_combined <- bind_rows(top100_qty, top100_profit) %>%
+  group_by(prod) %>%
+  mutate(
+    source = if(n() == 2) "熱賣 & 毛利 Top" else source  # 雙重入選
+  ) %>%
+  distinct(prod, .keep_all = TRUE) %>%
+  ungroup()
+```
+##4畫出互動氣泡圖（分組上色）
+```{r}
+plot_ly(
+  data = top_combined,
+  x = ~total_qty,
+  y = ~total_profit,
+  type = 'scatter',
+  mode = 'markers',
+  size = ~total_sales,
+  color = ~source,  # 用來自分類上色
+  sizes = c(10, 50),
+  marker = list(opacity = 0.7, line = list(width = 1, color = 'black')),
+  text = ~paste(
+    "商品編號: ", prod,
+    "<br>總銷量: ", total_qty,
+    "<br>總毛利: ", scales::comma(total_profit),
+    "<br>總銷售額: ", scales::comma(total_sales),
+    "<br>類型: ", source
+  ),
+  hoverinfo = 'text'
+) %>%
+  layout(
+    title = "Top 100 熱賣與毛利商品（分類標示）",
+    xaxis = list(title = "總銷量（log10）", type = "log"),
+    yaxis = list(title = "總毛利（log10）", type = "log")
   )
 ```
 #2從區域來分析
