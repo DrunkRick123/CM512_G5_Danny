@@ -34,7 +34,7 @@ glimpse(Z)
 ggplot(Z, aes(x = log10(cost))) +
   geom_histogram(binwidth = 0.1, fill = "blue", alpha = 0.7) +
   theme_minimal() +
-  labs(title = "商品售價分布", x = "售價", y = "頻率")
+  labs(title = "商品售價分布", x = "售價(log10)", y = "頻率")
 ```
 
 #1.1畫商品售價(cost)的盒鬚圖，x軸取log10
@@ -99,7 +99,7 @@ ggplot(product_summary, aes(x = reorder(cat, Total_Revenue), y = Total_Revenue))
     axis.title.y = element_text(face = "bold")
   )
 ```
-#3從區域來分析
+#2從區域來分析
 ```{r}
 # 確保 `transactions` 存在
 area_summary <- Z %>%
@@ -142,4 +142,61 @@ ggplot(area_summary, aes(x = area)) +
   theme_minimal(base_size = 14) +  
   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # 旋轉 X 軸標籤
 
+```
+#3從時間週期分析
+```{r}
+Z <- Z %>%
+  mutate(
+    date = ymd(date),  # ← 用 ymd
+    weekday = wday(date, label = TRUE, abbr = FALSE, week_start = 1)
+  )
+```
+#3.1禮拜一~禮拜天分析
+```{r}
+weekday_summary <- Z %>%
+  group_by(weekday) %>%
+  summarise(
+    total_sales = sum(qty * price, na.rm = TRUE),
+    transactions = n_distinct(cust),
+    .groups = "drop"
+  )
+
+
+weekday_summary <- weekday_summary %>%
+  mutate(log_sales = log10(total_sales))
+
+# 建立更平衡的縮放比例（強調交易數長條圖）
+scale_factor <- max(weekday_summary$transactions) / (max(weekday_summary$log_sales) * 1.3)
+
+ggplot(weekday_summary, aes(x = weekday)) +
+  # 長條圖：交易次數
+  geom_col(aes(y = transactions), fill = "darkorange", width = 0.7, alpha = 0.9) +
+
+  # 折線圖：log10(銷售額)
+  geom_line(aes(y = log_sales * scale_factor, group = 1),
+            color = "blue", size = 1.5) +
+  geom_point(aes(y = log_sales * scale_factor),
+             color = "blue", size = 3) +
+
+  # 數值標籤
+  geom_text(aes(y = transactions, label = transactions),
+            vjust = -0.3, color = "black", size = 4, fontface = "bold") +
+  geom_text(aes(y = log_sales * scale_factor, label = round(log_sales, 2)),
+            vjust = -1.2, color = "blue", size = 4, fontface = "bold") +
+
+  # 雙軸設定
+  scale_y_continuous(
+    name = "交易次數",
+    sec.axis = sec_axis(~ . / scale_factor, name = "總銷售額 (log10)")
+  ) +
+
+  labs(
+    title = "一週每日交易次數與總銷售額（log10）",
+    x = "星期幾", y = "交易次數"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
 ```
